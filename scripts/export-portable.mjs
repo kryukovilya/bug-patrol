@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {build} from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/postcss';
+import {writeThirdPartyLicenses} from './third-party-licenses.mjs';
+const destination=path.resolve(process.argv[2]||'outputs');
+fs.mkdirSync(destination,{recursive:true});
+const bundleDir=path.resolve('.portable');
+await build({configFile:false,root:process.cwd(),publicDir:false,resolve:{alias:{'@':process.cwd()}},define:{'process.env.NODE_ENV':'"production"'},plugins:[react()],css:{postcss:{plugins:[tailwindcss()]}},build:{outDir:bundleDir,emptyOutDir:true,minify:true,lib:{entry:path.resolve('scripts/portable-entry.tsx'),name:'BugPatrol',formats:['iife'],fileName:()=> 'game.js',cssFileName:'game'}}});
+const css=fs.readFileSync(path.join(bundleDir,'game.css'),'utf8');
+const js=fs.readFileSync(path.join(bundleDir,'game.js'),'utf8');
+if(!css.includes('.diorama'))throw Error('Missing 3D stylesheet');
+const html='<!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101d21"><title>Баг-патруль — Пакет не доставлен</title><style>'+css+'</style></head><body><div id="root"></div><script>'+js.replaceAll('</script','<\\/script')+'</script></body></html>';
+fs.writeFileSync(path.join(destination,'Игра.html'),html);
+fs.writeFileSync(path.join(destination,'index.html'),html);
+console.log('Offline HTML:',Buffer.byteLength(html),'bytes. Code, 3D geometry and styles are embedded.');
+
+fs.copyFileSync(path.resolve('OFL-Oswald.txt'),path.join(destination,'OFL-Oswald.txt'));
+writeThirdPartyLicenses(destination);
