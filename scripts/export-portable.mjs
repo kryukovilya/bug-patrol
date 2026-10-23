@@ -11,10 +11,13 @@ await build({configFile:false,root:process.cwd(),publicDir:false,resolve:{alias:
 const css=fs.readFileSync(path.join(bundleDir,'game.css'),'utf8');
 const js=fs.readFileSync(path.join(bundleDir,'game.js'),'utf8');
 if(!css.includes('.diorama'))throw Error('Missing 3D stylesheet');
-const html='<!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101d21"><title>Баг-патруль — Пакет не доставлен</title><style>'+css+'</style></head><body><div id="root"></div><script>'+js.replaceAll('</script','<\\/script')+'</script></body></html>';
+const icon='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#173a3d"/><rect x="11" y="16" width="42" height="34" rx="3" fill="#efd5a2"/><rect x="17" y="23" width="30" height="21" fill="#173a3d"/><path d="M23 29v5m18-5v5M27 39h10M32 9v7" stroke="#ade9c5" stroke-width="4"/></svg>');
+const html='<!doctype html><html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101d21"><title>Баг-патруль — Пакет не доставлен</title><link rel="icon" href="'+icon+'"><style>'+css+'</style></head><body><div id="root"></div><script>'+js.replaceAll('</script','<\\/script')+'</script></body></html>';
 fs.writeFileSync(path.join(destination,'Игра.html'),html);
 fs.writeFileSync(path.join(destination,'index.html'),html);
+fs.writeFileSync(path.resolve('index.html'),html);
 console.log('Offline HTML:',Buffer.byteLength(html),'bytes. Code, 3D geometry and styles are embedded.');
 
 fs.copyFileSync(path.resolve('OFL-Oswald.txt'),path.join(destination,'OFL-Oswald.txt'));
 writeThirdPartyLicenses(destination);
+if(destination!==process.cwd())fs.copyFileSync(path.join(destination,'THIRD_PARTY_LICENSES.txt'),path.resolve('THIRD_PARTY_LICENSES.txt'));

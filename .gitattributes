@@ -3,3 +3,4 @@
 *.jpg binary
 *.woff2 binary
 *.zip binary
+index.html linguist-generated=true

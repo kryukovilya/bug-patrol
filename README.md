@@ -22,8 +22,10 @@
 
 ## Запуск
 
-Скачайте `bug-patrol-v2.6.1-game.zip` в [разделе релизов](https://github.com/kryukovilya/bug-patrol/releases/latest), распакуйте и откройте `index.html` в современном браузере.
+Откройте `index.html` из репозитория в современном браузере или скачайте готовый архив в [разделе релизов](https://github.com/kryukovilya/bug-patrol/releases/latest).
 
-Для игры по ссылке с телефона разместите содержимое архива на статическом HTTPS-сервере.
+Для размещения на сервере скопируйте `index.html`, `OFL-Oswald.txt` и `THIRD_PARTY_LICENSES.txt` в папку сайта, например `/bug-patrol/`. Игра автономна: скрипты, стили и шрифт встроены, доступ к корню сайта не нужен.
+
+Для разработки: `npm ci`, затем `npm run dev`. Команда `npm run build` обновляет готовый `index.html` и собирает папку `dist-static`.
 
 Шрифт [Oswald](OFL-Oswald.txt) распространяется по SIL Open Font License. Лицензии библиотек включены в архив игры.

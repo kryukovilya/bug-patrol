@@ -2,6 +2,7 @@
 @import './game-font.css';
 @import './bug-hunt.css';
 @import 'tw-animate-css';
+@source not '../index.html';
 @custom-variant dark (&:is(.dark *));
 @theme inline{--color-background:#10232b;--color-foreground:#f2e4c7;--color-popover:#f0e2c3;--color-popover-foreground:#20393b;--color-primary:#efb964;--color-primary-foreground:#132c34;--color-secondary:#28484c;--color-muted:#244247;--color-muted-foreground:#acc2ba;--color-accent:#deaa61;--color-accent-foreground:#1b333a;--color-border:#657667;--color-input:#9b916d;--color-ring:#efbd71;--font-sans:Arial,Helvetica,sans-serif;--radius-lg:.5rem}
 :root{color-scheme:dark;--brass:#c18e52;--ink:#19373d;--paper:#efe1bf;--game-font:'Oswald',Arial,sans-serif}
