@@ -7,6 +7,10 @@ import type {EasterEggId} from './easter-eggs';
 export type Progress={code:string;observed:boolean;solved:boolean;hints:number;attempts:number;verifiedCode?:string};
 export type HuntState={version:2;started:boolean;room:Room;delivered:boolean;address:Fragment[];addressHints:number;met:CaseId[];reported:CaseId[];discoveries:EasterEggId[];cases:Record<CaseId,Progress>};
 export const finalAddress:Fragment[]=['i','t','dot','mos','kva'];
+export const rewardFragments:Record<CaseId,Fragment>={info:'kva',server:'i',gate:'dot',archive:'mos',dispatch:'t'};
+export const fragmentOrder:Fragment[]=['mos','dot','t','kva','i'];
+export function needsApplication(s:HuntState,id:CaseId){const p=s.cases[id];return (id==='info'||id==='server')&&!p.solved&&p.observed&&p.attempts>0&&p.verifiedCode===p.code;}
+export function applyCase(s:HuntState,id:CaseId):HuntState{return nextCase(s)===id&&s.room===id&&needsApplication(s,id)?{...s,cases:{...s.cases,[id]:{...s.cases[id],solved:true}}}:s;}
 export function addressCorrect(s:HuntState){return caseOrder.every(id=>s.cases[id].solved&&s.reported.includes(id))&&s.address.join('|')===finalAddress.join('|');}
 export function freshHunt():HuntState{return {version:2,started:false,room:'corridor',delivered:false,address:[],addressHints:0,met:[],reported:[],discoveries:[],cases:Object.fromEntries(caseOrder.map(id=>[id,{code:cases[id].starter,observed:false,solved:false,hints:0,attempts:0}])) as Record<CaseId,Progress>};}
 export function nextCase(s:HuntState):CaseId|undefined{return caseOrder.find(id=>!s.reported.includes(id));}
@@ -35,7 +39,7 @@ export function restoreHunt(value:unknown):HuntState|null{
  const discoveries=s.discoveries??[];if(!Array.isArray(discoveries)||discoveries.some(id=>typeof id!=='string'||!isEasterEgg(id))||new Set(discoveries).size!==discoveries.length)return null;clean.discoveries=[...discoveries];
  const address=s.address===undefined?(s.delivered?[...finalAddress]:[]):s.address;
  if(!Array.isArray(address)||address.length>5||new Set(address).size!==address.length||address.some(f=>!finalAddress.includes(f)))return null;
- if(address.some(f=>!clean.reported.includes(caseOrder[finalAddress.indexOf(f)])))return null;clean.address=[...address];
+ if(address.some(f=>!clean.reported.some(id=>rewardFragments[id]===f)))return null;clean.address=[...address];
  if(s.addressHints!==undefined&&(!Number.isInteger(s.addressHints)||s.addressHints<0||s.addressHints>3))return null;clean.addressHints=s.addressHints??0;
  let locked=false;for(const id of caseOrder){if(locked&&clean.cases[id].solved)return null;if(!clean.reported.includes(id))locked=true;}
  if(!canVisit(clean,clean.room)||clean.delivered&&!addressCorrect(clean)||!clean.started&&(clean.delivered||caseOrder.some(id=>clean.cases[id].observed||clean.cases[id].solved)))return null;

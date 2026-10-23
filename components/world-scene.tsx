@@ -25,6 +25,9 @@ type Props = {
     onWalk?: () => void;
     onStep?: () => void;
     onSendDone?: () => void;
+    application?: { id: string; serial: number } | null;
+    onApplyDone?: (id: string, serial: number) => void;
+    onApplyPress?: () => void;
     reaction?: {
         id: string;
         serial: number;
@@ -95,10 +98,28 @@ export function WorldScene(props: Props) {
         sun.shadow.mapSize.set(1024, 1024);
         Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9 });
         sun.shadow.bias = -.001;
+        sun.shadow.normalBias = .018;
         scene.add(sun);
         const materials: THREE.Material[] = [], geometries: THREE.BufferGeometry[] = [], textures: THREE.Texture[] = [];
         const mat = (color: number, emissive = 0) => { const m = new THREE.MeshStandardMaterial({ color, roughness: .7, metalness: .25, emissive, emissiveIntensity: .8 }); materials.push(m); return m; };
         const teal = mat(0x39686b), dark = mat(0x152e35), copper = mat(0xb77a4c), cream = mat(0xe0cda7), black = mat(0x0b2027), yellow = mat(0xf5bd60), mint = mat(0x9de8c9, 0x317e6a), red = mat(0xed7752, 0x772e1e), paper = mat(0xf6e5bf), blue = mat(0x376fa0), olive = mat(0x72985c), white = mat(0xdce9dd);
+        const finishCanvas = document.createElement('canvas');
+        finishCanvas.width = finishCanvas.height = 128;
+        const finishContext = finishCanvas.getContext('2d')!, finishPixels = finishContext.createImageData(128, 128);
+        for (let i = 0; i < 128 * 128; i++) {
+            const value = 215 + Math.round(Math.sin(i * 12.9898) * Math.cos(i * .173) * 16);
+            finishPixels.data.set([value, value, value, 255], i * 4);
+        }
+        finishContext.putImageData(finishPixels, 0, 0);
+        const finishTexture = new THREE.CanvasTexture(finishCanvas);
+        finishTexture.wrapS = finishTexture.wrapT = THREE.RepeatWrapping;
+        finishTexture.repeat.set(3, 3);
+        textures.push(finishTexture);
+        for (const material of [teal, dark, copper, blue]) {
+            material.roughnessMap = finishTexture;
+            material.roughness = .82;
+            material.metalness = material === copper ? .48 : .18;
+        }
         const mesh = (g: THREE.BufferGeometry, m: THREE.Material, p: THREE.Object3D, x: number, y: number, z: number) => { geometries.push(g); const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true; p.add(o); return o; };
         const box = (p: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, m: THREE.Material) => mesh(new THREE.BoxGeometry(w, h, d), m, p, x, y, z);
         const cyl = (p: THREE.Object3D, x: number, y: number, z: number, r: number, h: number, m: THREE.Material) => mesh(new THREE.CylinderGeometry(r, r, h, 16), m, p, x, y, z);
@@ -114,18 +135,41 @@ export function WorldScene(props: Props) {
         const corridor = state.room === 'corridor', width = 9;
         const label = (text: string, x: number, y: number, z: number, w = 1.5, parent: THREE.Object3D = room) => {
             const c = document.createElement('canvas');
-            c.width = 512;
-            c.height = 128;
+            c.width = 1024;
+            c.height = 256;
             const ctx = c.getContext('2d')!;
             let content = text;
-            const draw = () => { ctx.fillStyle = '#152d33'; ctx.fillRect(0, 0, 512, 128); ctx.strokeStyle = '#b98b54'; ctx.lineWidth = 6; ctx.strokeRect(4, 4, 504, 120); ctx.fillStyle = '#f4deb5'; ctx.font = '500 44px Oswald,monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(content, 256, 65, 474); };
+            const draw = () => {
+                ctx.fillStyle = '#173239';
+                ctx.fillRect(0, 0, 1024, 256);
+                ctx.strokeStyle = '#d4a668';
+                ctx.lineWidth = 7;
+                ctx.strokeRect(9, 9, 1006, 238);
+                let size = 88;
+                ctx.font = `600 ${size}px Oswald,monospace`;
+                while (ctx.measureText(content).width > 934 && size > 44)
+                    ctx.font = `600 ${--size}px Oswald,monospace`;
+                ctx.fillStyle = '#fae6be';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(content, 512, 130);
+            };
             draw();
             const texture = new THREE.CanvasTexture(c);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
             textures.push(texture);
-            const m = new THREE.MeshBasicMaterial({ map: texture });
+            const m = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
             materials.push(m);
             const p = mesh(new THREE.PlaneGeometry(w, w / 4), m, parent, x, y, z);
             p.castShadow = false;
+            box(p, 0, 0, -.038, w + .04, w / 4 + .04, .065, dark);
+            for (const sx of [-1, 1])
+                for (const sy of [-1, 1]) {
+                    const screw = cyl(p, sx * (w / 2 - .035), sy * (w / 8 - .035), .006, .012, .012, copper);
+                    screw.rotation.x = Math.PI / 2;
+                    screw.castShadow = false;
+                }
             p.userData.setText = (value: string) => {
                 if (content === value || disposed)
                     return;
@@ -134,7 +178,7 @@ export function WorldScene(props: Props) {
                 texture.needsUpdate = true;
                 forceFrame = true;
             };
-            void document.fonts.load('500 44px Oswald').then(() => {
+            void document.fonts.load('600 88px Oswald').then(() => {
                 if (!disposed) {
                     draw();
                     texture.needsUpdate = true;
@@ -268,8 +312,9 @@ export function WorldScene(props: Props) {
                 box(room, x, y, z + .55, .35, .05, .08, cream);
             }
         };
+        let pressButton: THREE.Mesh | undefined;
         let fan: THREE.Group | undefined, frog: THREE.Group | undefined, throat: THREE.Mesh | undefined, pigeon: THREE.Group | undefined, frogTongue: THREE.Mesh | undefined, bell: THREE.Group | undefined, temperatureLabel: THREE.Mesh | undefined, coolingStatusLabel: THREE.Mesh | undefined, overheatLight: THREE.PointLight | undefined;
-        const wings: THREE.Group[] = [], flames: THREE.Mesh[] = [], steam: THREE.Mesh[] = [], coolingSignals: THREE.Mesh[] = [], doorLeaves = new Map<string, THREE.Object3D>();
+        const wings: THREE.Group[] = [], flames: THREE.Sprite[] = [], steam: THREE.Sprite[] = [], coolingSignals: THREE.Mesh[] = [], doorLeaves = new Map<string, THREE.Object3D>();
         const coolingSignal = (o: THREE.Mesh) => {
             if (o.material instanceof THREE.MeshStandardMaterial) {
                 o.material = o.material.clone();
@@ -286,7 +331,85 @@ export function WorldScene(props: Props) {
                 hinge.rotation.y = -Math.PI * .53 * amount;
         };
         const smooth = (t: number) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
-        const smoke: THREE.Mesh[] = [], mailRollers: THREE.Mesh[] = [], pressureLights: THREE.Mesh[] = [];
+        const smoke: THREE.Sprite[] = [], sparks: THREE.Sprite[] = [], mailRollers: THREE.Mesh[] = [], pressureLights: THREE.Mesh[] = [];
+        const effectTexture = (kind: 'flame' | 'smoke' | 'spark', variant = 0) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = kind === 'flame' ? 256 : 128;
+            const ctx = canvas.getContext('2d')!;
+            if (kind === 'flame') {
+                const flameGradient = ctx.createLinearGradient(0, 256, 0, 0);
+                flameGradient.addColorStop(0, '#ffdb74');
+                flameGradient.addColorStop(.23, '#ffb43f');
+                flameGradient.addColorStop(.55, '#fa7929');
+                flameGradient.addColorStop(.86, '#ef531100');
+                flameGradient.addColorStop(1, '#e53b0000');
+                ctx.fillStyle = flameGradient;
+                ctx.shadowColor = '#ff8528';
+                ctx.shadowBlur = 13;
+                ctx.beginPath();
+                ctx.moveTo(64, 248);
+                ctx.bezierCurveTo(13, 248, 9, 202, 34, 148);
+                ctx.bezierCurveTo(43, 170, 48, 169, 48, 139);
+                ctx.bezierCurveTo(40, 91, 83 + variant * 7, 65, 70 + variant * 5, 17);
+                ctx.bezierCurveTo(115, 81, 69, 111, 92, 153);
+                ctx.bezierCurveTo(125, 208, 106, 248, 64, 248);
+                ctx.fill();
+                ctx.shadowBlur = 4;
+                const core = ctx.createLinearGradient(0, 248, 0, 116);
+                core.addColorStop(0, '#fffde6');
+                core.addColorStop(.45, '#fff2bb');
+                core.addColorStop(1, '#ffd06100');
+                ctx.fillStyle = core;
+                ctx.beginPath();
+                ctx.moveTo(66, 249);
+                ctx.bezierCurveTo(36, 243, 45, 198, 68, 147);
+                ctx.bezierCurveTo(68, 190, 101, 229, 66, 249);
+                ctx.fill();
+            }
+            else {
+                const glow = ctx.createRadialGradient(64, 64, 0, 64, 64, 62);
+                if (kind === 'spark') {
+                    glow.addColorStop(0, '#fff8d6');
+                    glow.addColorStop(.16, '#ffd475');
+                    glow.addColorStop(.5, '#ff8a3040');
+                    glow.addColorStop(1, '#ff7a2000');
+                    ctx.fillStyle = glow;
+                    ctx.fillRect(0, 0, 128, 128);
+                }
+                else {
+                    glow.addColorStop(0, '#acb3aebb');
+                    glow.addColorStop(.42, '#8b96938c');
+                    glow.addColorStop(.75, '#72807d30');
+                    glow.addColorStop(1, '#85928f00');
+                    ctx.fillStyle = glow;
+                    ctx.fillRect(0, 0, 128, 128);
+                    ctx.globalCompositeOperation = 'destination-out';
+                    for (let i = 0; i < 5; i++) {
+                        const cutout = ctx.createRadialGradient(17 + i * 23, 25 + (i % 2) * 72, 4, 17 + i * 23, 25 + (i % 2) * 72, 27);
+                        cutout.addColorStop(0, '#00000090');
+                        cutout.addColorStop(1, '#00000000');
+                        ctx.fillStyle = cutout;
+                        ctx.fillRect(0, 0, 128, 128);
+                    }
+                }
+            }
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            textures.push(texture);
+            return texture;
+        };
+        const effectSprite = (texture: THREE.Texture, x: number, y: number, z: number, w: number, h: number, additive = false) => {
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false });
+            materials.push(material);
+            const sprite = new THREE.Sprite(material);
+            sprite.position.set(x, y, z);
+            sprite.scale.set(w, h, 1);
+            sprite.userData.origin = sprite.position.clone();
+            sprite.userData.size = sprite.scale.clone();
+            room.add(sprite);
+            return sprite;
+        };
         if (!corridor) {
             const door = group(room, -width / 2 + .18, 0, 2.55);
             door.rotation.y = Math.PI / 2;
@@ -338,7 +461,8 @@ export function WorldScene(props: Props) {
                 tail.rotation.x = -.3;
             }
             bind('pigeon', pigeon);
-            label('ОБЛАЧНОЕ ХРАНЕНИЕ', -3.72, .85, 1.97, 1.2);
+            box(room, -3.72, 1.12, 1.77, .12, .09, .43, copper);
+            label('ОБЛАЧНОЕ ХРАНЕНИЕ', -3.72, 1.12, 2.01, 1.55);
             const router = group(room, -4.08, 2.55, -.5);
             router.rotation.y = Math.PI / 2;
             box(router, 0, 0, 0, 1.2, .35, .28, dark);
@@ -358,12 +482,20 @@ export function WorldScene(props: Props) {
                 sheet.rotation.y = i * .08;
             }
             const resetStart = room.children.length;
-            box(room, 3.1, 1.6, -2.1, .75, 1.05, .45, dark);
-            const resetButton = cyl(room, 3.1, 1.75, -1.8, .23, .18, state.repaired.info ? mint : red);
-            resetButton.rotation.x = Math.PI / 2;
-            label('ОТЛАДКА', 3.1, 2.42, -1.78, 1.35);
+            box(room, 3.1, 1.32, -3.58, 1.1, 1.58, .25, copper);
+            box(room, 3.1, 1.3, -3.32, .86, 1.05, .58, dark);
+            for (const x of [2.72, 3.48])
+                for (const y of [.88, 1.72]) {
+                    const bolt = cyl(room, x, y, -3.01, .035, .035, copper);
+                    bolt.rotation.x = Math.PI / 2;
+                }
+            const bezel = cyl(room, 3.1, 1.3, -3, .3, .08, copper);
+            bezel.rotation.x = Math.PI / 2;
+            pressButton = cyl(room, 3.1, 1.3, -2.91, .23, .12, state.repaired.info ? mint : red);
+            pressButton.rotation.x = Math.PI / 2;
+            label('РЕСТАРТ', 3.1, 2.1, -3.38, 1.02);
             bindRecent('reset', resetStart);
-            bind('clock', label('ПРИЁМ 24/7', -2.7, 2.9, -3.45, 1.5));
+            bind('clock', label('ПРИЁМ 24/7', -2.7, 2.86, -3.25, 1.5));
         }
         else if (state.room === 'server') {
             for (const x of [-1.3, .15]) {
@@ -394,13 +526,19 @@ export function WorldScene(props: Props) {
             ball(room, 2.5, 1.8, -3.07, .19, copper);
             for (const x of [1.7, 2.1, 2.5, 2.9, 3.3])
                 box(room, x, 1.8, -2.84, .025, 1.8, .03, dark);
-            label('ОХЛАЖДЕНИЕ', 2.5, 3.25, -2.81, 1.9);
-            box(room, 2.5, .55, -3.15, 1.1, .55, .25, teal);
+            box(room, 2.5, 3.1, -3.28, 2.2, .55, .1, dark);
+            label('ОХЛАЖДЕНИЕ', 2.5, 3.14, -3.18, 1.9);
+            box(room, 2.5, .65, -3.15, 1.1, .75, .3, teal);
+            const startBezel = cyl(room, 2.5, .88, -2.97, .16, .06, copper);
+            startBezel.rotation.x = Math.PI / 2;
+            pressButton = cyl(room, 2.5, .88, -2.9, .115, .1, state.repaired.server ? mint : red);
+            pressButton.rotation.x = Math.PI / 2;
             for (let i = 0; i < 3; i++)
                 coolingSignal(ball(room, 2.2 + i * .3, .58, -2.99, .06, state.repaired.server ? mint : red));
             bindRecent('fan', fanStart);
-            for (let i = 0; i < 4; i++) {
-                const s = ball(room, -.8 + i * .22, 2.7 + i * .2, -2, .2 + i * .025, mat(0x89918c));
+            const smokeTexture = effectTexture('smoke');
+            for (let i = 0; i < 7; i++) {
+                const s = effectSprite(smokeTexture, -1.1 + (i % 3) * .53, 2.85 + (i % 4) * .2, -2.1, .78, .72);
                 s.visible = !state.repaired.server;
                 smoke.push(s);
             }
@@ -411,23 +549,26 @@ export function WorldScene(props: Props) {
             label('ПРИ ДЕДЛАЙНЕ', -3.8, 1.6, -1.9, 1.1);
             bindRecent('extinguisher', extinguisherStart);
             {
-                const fire = mat(0xff9b38, 0xeb511c);
-                for (let i = 0; i < 5; i++) {
-                    const f = ball(room, -1.55 + i * .4, 2.8, -1.9, .18, fire);
-                    f.scale.y = 1.8;
+                const fireTextures = [0, 1, 2].map(i => effectTexture('flame', i));
+                for (let i = 0; i < 9; i++) {
+                    const f = effectSprite(fireTextures[i % 3], -1.7 + i * .27, 2.58, -1.88 + Math.sin(i * 2.8) * .15, .44 + (i % 3) * .06, .62 + (i % 4) * .13);
+                    f.center.set(.5, .03);
                     f.visible = !state.repaired.server;
                     flames.push(f);
+                }
+                const sparkTexture = effectTexture('spark');
+                for (let i = 0; i < 9; i++) {
+                    const spark = effectSprite(sparkTexture, -1.65 + (i % 5) * .4, 2.7, -1.85, .07, .13, true);
+                    spark.visible = !state.repaired.server;
+                    sparks.push(spark);
                 }
                 overheatLight = new THREE.PointLight(0xff7b30, state.repaired.server ? 0 : 2.4, 5);
                 overheatLight.position.set(-.5, 2.5, -1.5);
                 room.add(overheatLight);
             }
-            const mistMaterial = mat(0xbbe3dd);
-            mistMaterial.transparent = true;
-            mistMaterial.opacity = .6;
-            mistMaterial.depthWrite = false;
             for (let i = 0; i < 6; i++) {
-                const p = ball(room, -2.4 + i * .35, 1.6 + i * .16, -1.7, .22, mistMaterial);
+                const p = effectSprite(smokeTexture, -2.4 + i * .35, 1.6 + i * .16, -1.7, .75, .7);
+                p.material.color.setHex(0xc1e8df);
                 p.visible = false;
                 steam.push(p);
             }
@@ -500,6 +641,7 @@ export function WorldScene(props: Props) {
             const bookStart = room.children.length;
             for (let i = 0; i < 3; i++)
                 box(room, .5, 2.5 + i * .06, -1.65, .75, .05, .65, i % 2 ? paper : copper);
+            box(room, .5, 2.71, -1.39, .075, .36, .08, copper);
             label('README', .5, 2.84, -1.3, 1.15);
             bindRecent('book', bookStart);
             for (const i of [-1, 1]) {
@@ -545,7 +687,7 @@ export function WorldScene(props: Props) {
             for (let i = 0; i < 5; i++)
                 pressureLights.push(ball(room, 3.48, 1.6 + i * .32, -.69, .06, mint));
             box(room, 2.95, .5, -1.35, .7, .85, 1.2, blue);
-            label('ПНЕВМОПОЧТА', 1.4, 3.15, -3.4, 3);
+            label('ПНЕВМОПОЧТА', 1.4, 3.02, -3.25, 2.7);
             bell = group(room, 1.04, 1.39, -.12);
             const dome = ball(bell, 0, 0, 0, .18, copper);
             dome.scale.y = .55;
@@ -566,10 +708,14 @@ export function WorldScene(props: Props) {
         {
             const repaired = corridor ? false : state.room === 'info' ? state.repaired.info : state.room === 'server' ? state.repaired.server : state.room === 'gate' ? state.repaired.gate : state.room === 'archive' ? state.repaired.archive : state.repaired.dispatch;
             // Wall-mounted diagnostic equipment adds detail without obstructing the courier.
-            if (!corridor) {
-                box(room, .15, 2.55, -3.52, 2.35, .68, .16, dark);
-                box(room, .15, 2.55, -3.42, 2.16, .51, .02, black);
-                const diagnostic = label(state.room === 'info' ? (repaired ? 'ОТВЕТ СОХРАНЁН' : 'ЦИКЛ: СНОВА ПРИВЕТ') : state.room === 'server' ? (repaired ? 'ОХЛАЖДЕНИЕ: ON' : 'ДАТЧИК: ПЕРЕГРЕВ') : state.room === 'gate' ? (repaired ? 'ДОПУСК ПРОВЕРЕН' : 'ПРОВЕРКА: ОШИБКА') : state.room === 'archive' ? (repaired ? 'ФАЙЛЫ: 3 / 3' : 'ФАЙЛЫ: 2 / 3') : (repaired ? 'ОТВЕТ ПОЛУЧЕН' : 'ОЖИДАНИЕ ОТВЕТА'), .15, 2.55, -3.38, 2.12);
+            if (!corridor && state.room !== 'gate') {
+                const diagnosticY = state.room === 'server' || state.room === 'archive' ? 3.04 : 2.55;
+                const diagnosticX = state.room === 'server' ? -.65 : state.room === 'archive' ? -.65 : .15;
+                for (const side of [-1, 1])
+                    for (const edge of [-1, 1])
+                        box(room, diagnosticX + side * .93, diagnosticY + edge * .22, -3.48, .065, .065, .38, copper);
+                box(room, diagnosticX, diagnosticY, -3.33, 2.35, .68, .07, dark);
+                const diagnostic = label(state.room === 'info' ? (repaired ? 'ОТВЕТ СОХРАНЁН' : 'ЦИКЛ: СНОВА ПРИВЕТ') : state.room === 'server' ? (repaired ? 'ОХЛАЖДЕНИЕ: ON' : 'ДАТЧИК: ПЕРЕГРЕВ') : state.room === 'archive' ? (repaired ? 'ФАЙЛЫ: 3 / 3' : 'ФАЙЛЫ: 2 / 3') : (repaired ? 'ОТВЕТ ПОЛУЧЕН' : 'ОЖИДАНИЕ ОТВЕТА'), diagnosticX, diagnosticY, -3.28, 2.12);
                 if (state.room === 'server')
                     coolingStatusLabel = diagnostic;
             }
@@ -582,10 +728,10 @@ export function WorldScene(props: Props) {
                 box(room, -4.08, .9 + i * .35, 2, .04, .035, .35, repaired ? mint : red);
             }
             if (corridor) {
-                label('БАГ-ПАТРУЛЬ / 404', -.5, 3.1, -3.45, 2.55);
+                label('БАГ-ПАТРУЛЬ / 404', -1.4, -.4, 4.14, 2.55);
                 for (let i = 0; i < 5; i++) {
                     const fixed = [state.repaired.info, state.repaired.server, state.repaired.gate, state.repaired.archive, state.repaired.dispatch][i];
-                    box(room, -1.35 + i * .45, 2.72, -3.43, .33, .16, .07, fixed ? mint : red);
+                    box(room, 1.3 + i * .45, -.4, 4.14, .33, .16, .07, fixed ? mint : red);
                 }
                 for (const z of [-2.7, -1.4, 0, 1.3, 2.6])
                     box(room, -4.18, .25, z, .13, .06, .4, mint);
@@ -596,7 +742,6 @@ export function WorldScene(props: Props) {
                     sheet.rotation.y = i * .1;
                     loopPapers.push(sheet);
                 }
-                label(state.repaired.info ? '1 ОТВЕТ' : '3 ОТВЕТА', 1, 1.65, -.4, 1.4);
             }
             if (state.room === 'gate') {
                 for (let i = 0; i < 3; i++) {
@@ -617,6 +762,8 @@ export function WorldScene(props: Props) {
                     file.visible = i < count;
                     archiveFiles.push(file);
                 }
+                for (const x of [-2.52, -1.18])
+                    box(room, x, 2.88, -1.53, .045, .87, .06, copper);
                 label('0      1      2', -1.85, 3.32, -1.48, 1.6);
             }
             if (state.room === 'dispatch') {
@@ -779,6 +926,10 @@ export function WorldScene(props: Props) {
         let repairId: string | null = null, repairStarted = -Infinity, repairRadius = .5, cheerArm = 0, cheerBob = 0, cheerHead = 0;
         let tapped: string | null = null, tappedAt = -Infinity;
         let queuedMove: string | null = null;
+        let applicationSerial = -1;
+        let applicationJob: { id: string; serial: number; pressing: boolean; age: number; contacted: boolean } | null = null;
+        const pressArm = courier.arms[0], pressArmRest = pressArm.quaternion.clone();
+        const pressButtonZ = pressButton?.position.z ?? 0, downAxis = new THREE.Vector3(0, -1, 0), pressPoint = new THREE.Vector3(), pressAim = new THREE.Quaternion();
         let facing = courier.group.rotation.y, phase = 0, walkBlend = 0, stepIndex = 0, route: {
             x: number;
             z: number;
@@ -792,6 +943,12 @@ export function WorldScene(props: Props) {
             to: THREE.Vector3;
         } | null = null, awaitingRoom = false;
         function travelOrInspect(id: string) {
+            if (applicationJob?.id === id) {
+                applicationJob.pressing = true;
+                applicationJob.age = 0;
+                facing = Math.PI;
+                return;
+            }
             const next = id === 'exit' ? (state.room === 'archive' ? 'gate' : 'corridor') : corridor && ['info', 'server', 'gate', 'dispatch'].includes(id) ? id as Room : state.room === 'gate' && id === 'gate' && latest.current.state.repaired.gate ? 'archive' : null;
             if (!next) {
                 latest.current.onInspect?.(id);
@@ -979,7 +1136,7 @@ export function WorldScene(props: Props) {
                 return;
             }
             const reduced = media.matches || latest.current.reduceMotion;
-            const busy = route.length > 0 || !!doorway || arrival < 1 || latest.current.sending || reactionAge < 2 || now - repairStarted < 2400 || now - tappedAt < 750;
+            const busy = route.length > 0 || !!applicationJob || !!latest.current.application || !!doorway || arrival < 1 || latest.current.sending || reactionAge < 2 || now - repairStarted < 2400 || now - tappedAt < 750;
             const renderRate = busy ? 60 : reduced ? 15 : latest.current.paused ? 24 : 60;
             if (!forceFrame && renderedProps === latest.current && now - old < 1000 / renderRate - 1)
                 return;
@@ -987,17 +1144,29 @@ export function WorldScene(props: Props) {
             old = now;
             forceFrame = false;
             renderedProps = latest.current;
+            const request = latest.current.application;
+            if (request && request.serial !== applicationSerial && pressButton) {
+                applicationSerial = request.serial;
+                applicationJob = { ...request, pressing: false, age: 0, contacted: false };
+                move(request.id, true);
+            }
+            if (!request) applicationJob = null;
+            if (applicationJob) {
+                pressArm.quaternion.copy(pressArmRest);
+                pressArm.scale.y = 1;
+            }
+            const scenePaused = latest.current.paused && !applicationJob;
             // Remove the previous additive gesture before walking updates its base pose.
             courier.arms.forEach(arm => arm.rotation.x -= cheerArm);
             courier.body.position.y -= cheerBob;
             courier.head.rotation.z -= cheerHead;
             cheerArm = cheerBob = cheerHead = 0;
             temperatureLabel?.userData.setText(latest.current.debugTemperature !== undefined ? latest.current.debugTemperature + ' °C' : latest.current.state.repaired.server ? '36 °C' : '95 °C');
-            if (latest.current.paused && !doorway && arrival === 1) {
+            if (scenePaused && !doorway && arrival === 1) {
                 route = [];
                 pending = null;
             }
-            if (arrival < 1 && !latest.current.paused) {
+            if (arrival < 1 && !scenePaused) {
                 arrival = Math.min(1, arrival + dt / (reduced ? .3 : 1.25));
                 const walk = Math.min(1, arrival / .7);
                 courier.group.position.set(entryFrom.x + (entryTo.x - entryFrom.x) * walk, 0, entryFrom.z + (entryTo.z - entryFrom.z) * walk);
@@ -1015,7 +1184,7 @@ export function WorldScene(props: Props) {
                     }
                 }
             }
-            else if (doorway && !latest.current.paused) {
+            else if (doorway && !scenePaused) {
                 doorway.age += dt;
                 const progress = Math.min(1, doorway.age / (reduced ? .3 : 1.5)), walk = Math.max(0, (progress - .35) / .65);
                 openDoor(doorway.id, smooth(progress / .35));
@@ -1027,7 +1196,7 @@ export function WorldScene(props: Props) {
                     latest.current.onTravel?.(doorway.room);
                 }
             }
-            else if (arrival === 1 && !doorway && !latest.current.paused && !awaitingRoom) {
+            else if (arrival === 1 && !doorway && !scenePaused && !awaitingRoom) {
                 const step = advanceWalk(courier.group.position, route, dt, reduced);
                 route = step.route;
                 courier.group.position.set(step.position.x, 0, step.position.z);
@@ -1055,6 +1224,33 @@ export function WorldScene(props: Props) {
                     travelOrInspect(id);
                 }
                 courier.group.rotation.y = reduced ? facing : turnTowards(courier.group.rotation.y, facing, dt);
+            }
+            if (applicationJob?.pressing && pressButton) {
+                applicationJob.age += dt;
+                const duration = reduced ? .45 : 1.5, u = Math.min(1, applicationJob.age / duration);
+                const reach = reduced ? 0 : smooth(u / .3) * (1 - smooth((u - .65) / .35));
+                const depression = smooth((u - .3) / .1) * (1 - smooth((u - .6) / .12));
+                pressButton.position.z = pressButtonZ - depression * .055;
+                room.updateMatrixWorld(true);
+                pressButton.getWorldPosition(pressPoint);
+                courier.body.worldToLocal(pressPoint);
+                pressPoint.sub(pressArm.position);
+                const extension = Math.min(2.1, pressPoint.length() / .52);
+                pressAim.setFromUnitVectors(downAxis, pressPoint.normalize());
+                pressArm.quaternion.copy(pressArmRest).slerp(pressAim, reach);
+                pressArm.scale.y = 1 + (extension - 1) * reach;
+                if (u >= .4 && !applicationJob.contacted) {
+                    applicationJob.contacted = true;
+                    latest.current.onApplyPress?.();
+                }
+                if (u === 1) {
+                    const completed = applicationJob;
+                    applicationJob = null;
+                    pressArm.quaternion.copy(pressArmRest);
+                    pressArm.scale.y = 1;
+                    pressButton.position.z = pressButtonZ;
+                    latest.current.onApplyDone?.(completed.id, completed.serial);
+                }
             }
             last.current = { room: state.room, x: courier.group.position.x, z: courier.group.position.z, heading: courier.group.rotation.y, cover };
             const nextRepair = latest.current.repairTarget ?? null;
@@ -1121,6 +1317,7 @@ export function WorldScene(props: Props) {
                 host.current.dataset.tapActive = String(now - tappedAt < 750);
                 host.current.dataset.repairTarget = latest.current.repairTarget ?? '';
                 host.current.dataset.repairAccent = String(repairActive);
+                host.current.dataset.application = applicationJob ? (applicationJob.pressing ? 'pressing' : 'walking') : '';
                 host.current.dataset.repairFocus = repairId === 'cabinet' ? 'restored-file' : repairId ?? '';
                 host.current.dataset.renderCount = String(++renderCount);
                 host.current.dataset.renderRate = String(renderRate);
@@ -1146,19 +1343,44 @@ export function WorldScene(props: Props) {
                 reactionAge = 0;
             }
             reactionAge += dt;
+            flames.forEach((f, i) => {
+                const size = f.userData.size as THREE.Vector3;
+                const pulse = reduced ? 1 : 1 + Math.sin(now * .009 + i * 1.8) * .14 + Math.sin(now * .017 + i) * .06;
+                f.scale.set(size.x * (2 - pulse), size.y * pulse, 1);
+                f.material.rotation = reduced ? 0 : Math.sin(now * .004 + i * 2) * .08;
+                f.material.opacity = reduced ? .9 : .8 + Math.sin(now * .006 + i) * .12;
+            });
             if (!reduced) {
-                flames.forEach((f, i) => { f.scale.y = 1.4 + Math.sin(now * .017 + i) * .55; f.rotation.z = Math.sin(now * .01 + i) * .15; });
                 if (bell)
                     bell.rotation.z = reactionId === 'bell' && reactionAge < 1 ? Math.sin(reactionAge * 30) * .18 : 0;
             }
-            steam.forEach(p => { p.visible = reactionId === 'extinguisher' && reactionAge < 1.5; p.scale.setScalar(.6 + reactionAge * .7); });
+            steam.forEach((p, i) => {
+                p.visible = reactionId === 'extinguisher' && reactionAge < 1.5;
+                p.scale.copy(p.userData.size as THREE.Vector3).multiplyScalar(.6 + reactionAge * .9);
+                p.position.y = (p.userData.origin as THREE.Vector3).y + (reduced ? 0 : reactionAge * .27);
+                p.material.opacity = Math.max(0, 1 - reactionAge / 1.5) * .85;
+                p.material.rotation = i * .8 + (reduced ? 0 : reactionAge * .3);
+            });
             if (frogTongue) {
                 frogTongue.visible = !reduced && reactionId === 'frog' && reactionAge < .65;
                 frogTongue.scale.z = 1 + Math.sin(reactionAge * 8) * .6;
             }
             if (!reduced && throat && reactionId === 'frog' && reactionAge < 1.5)
                 throat.scale.y = .8 + Math.sin(reactionAge * 15) * .2;
-            smoke.forEach((s, i) => { s.position.y = 2.7 + i * .22 + (reduced ? 0 : Math.sin(now * .001 + i) * .13); });
+            smoke.forEach((s, i) => {
+                const age = reduced ? .25 + i / smoke.length * .55 : (now * .00024 + i / smoke.length) % 1;
+                const origin = s.userData.origin as THREE.Vector3;
+                s.position.set(origin.x + Math.sin(age * 4 + i) * age * .2, 2.66 + age * 1.03, origin.z - age * .11);
+                s.scale.setScalar(.55 + age * .9);
+                s.material.opacity = Math.sin(age * Math.PI) * .73;
+                s.material.rotation = i * 1.7 + age * .65;
+            });
+            sparks.forEach((s, i) => {
+                const age = (now * .0005 + i / sparks.length) % 1, origin = s.userData.origin as THREE.Vector3;
+                s.position.set(origin.x + Math.sin(i * 2.3 + age * 5) * age * .16, origin.y + age * .95, origin.z);
+                s.material.opacity = Math.sin(age * Math.PI) * .65;
+                s.material.rotation = Math.sin(age * 4 + i) * .35;
+            });
             {
                 const tapAge = (now - tappedAt) / 750;
                 tapRing.visible = tapAge < 1 && !latest.current.paused;
@@ -1169,7 +1391,7 @@ export function WorldScene(props: Props) {
                     y: number;
                 }[] = [], projected = new Map(interactive.map(item => [item.id, screenBounds(item.bounds)]));
                 for (const item of interactive) {
-                    const selected = item.id === (focused ?? hovered), suggested = item.id === latest.current.suggestedTarget, pressed = item.id === tapped && tapAge < 1, repaired = item.id === latest.current.repairTarget, archiveRepair = repaired && state.room === 'archive' && item.id === 'cabinet';
+                    const selected = item.id === (focused ?? hovered), suggested = item.id === latest.current.suggestedTarget, pressed = item.id === latest.current.application?.id || item.id === tapped && tapAge < 1, repaired = item.id === latest.current.repairTarget, archiveRepair = repaired && state.room === 'archive' && item.id === 'cabinet';
                     const pulse = reduced ? 1 : .86 + Math.sin(now * .0027) * .14, amount = pressed ? .55 : repaired ? (archiveRepair ? .055 : .3 * pulse + repairStrength * .2) : latest.current.paused ? .025 : selected ? .28 : suggested ? .17 * pulse : .065;
                     const tint = new THREE.Color(repaired ? 0x8ff9d7 : pressed || selected || suggested ? 0xffca6a : 0x62d7c5), light = tint.clone().multiplyScalar(amount);
                     item.outline.color.copy(tint);
@@ -1233,8 +1455,9 @@ export function WorldScene(props: Props) {
                 const cooled = latest.current.state.repaired.server;
                 smoke.forEach(s => s.visible = !cooled);
                 flames.forEach(f => f.visible = !cooled);
+                sparks.forEach(s => s.visible = !cooled && !reduced);
                 if (overheatLight)
-                    overheatLight.intensity = cooled ? 0 : 2.4;
+                    overheatLight.intensity = cooled ? 0 : reduced ? 2.1 : 2.1 + Math.sin(now * .01) * .24 + Math.sin(now * .023) * .12;
                 coolingSignals.forEach(s => { const m = s.material as THREE.MeshStandardMaterial; m.color.setHex(cooled ? 0x9de8c9 : 0xed7752); m.emissive.setHex(cooled ? 0x317e6a : 0x772e1e); m.emissiveIntensity = .8; });
                 coolingStatusLabel?.userData.setText(cooled ? (latest.current.previewFan === false ? 'ТЕМПЕРАТУРА: НОРМА' : 'ОХЛАЖДЕНИЕ: ON') : 'ДАТЧИК: ПЕРЕГРЕВ');
             }
@@ -1282,6 +1505,12 @@ export function WorldScene(props: Props) {
         const id = setTimeout(() => latest.current.onSendDone?.(), 700);
         return () => clearTimeout(id);
     }, [failed, sending]);
+    useEffect(() => {
+        const request = props.application;
+        if (!failed || !request) return;
+        const timer = setTimeout(() => { latest.current.onApplyPress?.(); latest.current.onApplyDone?.(request.id, request.serial); }, 700);
+        return () => clearTimeout(timer);
+    }, [failed, props.application?.serial]);
     useEffect(() => { controls.current?.stop(); }, [props.guidanceRevision]);
     function activate(t: SceneTarget) {
         if (props.paused || transition)
